@@ -3,7 +3,9 @@ using System.ComponentModel;
 using System.Threading.Tasks;
 using Android.Content;
 using Android.Gms.Tasks;
+using Android.Graphics;
 using Android.Hardware.Camera2;
+using Android.Provider;
 using Android.Util;
 using AndroidX.Camera.Camera2.InterOp;
 using AndroidX.Camera.Core;
@@ -12,12 +14,16 @@ using AndroidX.Camera.View;
 using AndroidX.Core.Content;
 using AndroidX.Lifecycle;
 using Google.Common.Util.Concurrent;
+using Java.Interop;
+using Java.IO;
 using Java.Lang;
+using Java.Util;
 using Java.Util.Concurrent;
 using Xamarin.Forms;
 using Xamarin.Forms.Platform.Android;
 using Xamarin.Google.MLKit.Vision.BarCode;
 using Xamarin.Google.MLKit.Vision.Common;
+using static AndroidX.Camera.Core.ImageCapture;
 using Exception = Java.Lang.Exception;
 
 [assembly: ExportRenderer(typeof(GoogleVisionBarCodeScanner.CameraView), typeof(GoogleVisionBarCodeScanner.Renderer.CameraViewRenderer))]
@@ -30,6 +36,8 @@ namespace GoogleVisionBarCodeScanner.Renderer
 
         private IListenableFuture _cameraFuture;
         private IExecutorService _cameraExecutor;
+        private ImageCapture _imageCapture;
+        private const string FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS";
 
         private ICamera _camera;
 
@@ -38,12 +46,18 @@ namespace GoogleVisionBarCodeScanner.Renderer
         public CameraViewRenderer(Context context) : base(context)
         {
             _cameraExecutor = Executors.NewSingleThreadExecutor();
-            _cameraFuture   = ProcessCameraProvider.GetInstance(context);
+            _cameraFuture = ProcessCameraProvider.GetInstance(context);
+            _imageCapture = new ImageCapture.Builder().Build();
         }
 
         protected override void OnElementChanged(ElementChangedEventArgs<CameraView> e)
         {
             base.OnElementChanged(e);
+
+            if (e.OldElement != null)
+            {
+                // Unsubscribe from event handlers and cleanup any resources
+            }
 
             if (e.NewElement == null) return;
             if (Control == null)
@@ -71,9 +85,62 @@ namespace GoogleVisionBarCodeScanner.Renderer
             {
                 CameraCallback();
             }
+            else if (e.PropertyName == CameraView.TakePhotoProperty.PropertyName)
+            {
+                TakePicture();
+            }
         }
 
         protected override PreviewView CreateNativeControl() => new PreviewView(Context);
+
+        private void TakePicture()
+        {
+            if (_imageCapture == null) return;
+            var timestampFileName = new Java.Text.SimpleDateFormat(FILENAME_FORMAT, Locale.SimplifiedChinese).Format(JavaSystem.CurrentTimeMillis());
+
+            var photoFile = new File(Xamarin.Essentials.FileSystem.CacheDirectory, timestampFileName + ".jpg");
+            //var photoFile = new File(Context.GetExternalFilesDir(Android.OS.Environment.DirectoryDcim), timestampFileName + ".jpg");
+            //var photoFile = File.CreateTempFile(timestampFileName, ".jpg", Android.OS.Environment.GetExternalStoragePublicDirectory(Android.OS.Environment.DirectoryDcim));
+            //can not save, permission denied
+            //var path1 = Android.OS.Environment.GetExternalStoragePublicDirectory(Android.OS.Environment.DirectoryDcim);
+            //can save
+            //var path2 = Context.GetExternalFilesDir(Android.OS.Environment.DirectoryDcim);
+
+
+            var outputOptions = new OutputFileOptions.Builder(photoFile).Build();
+            _imageCapture.TakePicture(outputOptions, ContextCompat.GetMainExecutor(Context), new ImageSaveCallback(
+
+                onErrorCallback: (exc) =>
+                {
+                    var msg = $"Photo capture failed: {exc.Message}";
+                    Log.Error("aaa", msg);
+                },
+
+                onImageSaveCallback: (output) =>
+                {
+                    var savedUri = output.SavedUri;
+                    var msg = $"Photo capture succeeded: {savedUri}";
+                    var path1 = Android.OS.Environment.GetExternalStoragePublicDirectory(Android.OS.Environment.DirectoryDcim);
+                    var path2 = System.IO.Path.Combine(path1.AbsolutePath, timestampFileName + ".jpg");
+                    System.IO.File.Copy(photoFile.AbsolutePath, path2);
+                    Android.Media.MediaScannerConnection.ScanFile(Android.App.Application.Context, new string[] { path2 }, null, null);
+                    //MediaScannerConnection.ScanFile(Android.App.Application.Context, new string[] { path1 }, null, null);
+                }
+            ));
+        }
+
+        private File GetOutputDirectory()
+        {
+            //var mediaDir = GetExternalMediaDirs().FirstOrDefault();  
+            var mediaDir = Android.OS.Environment.GetExternalStoragePublicDirectory(System.IO.Path.Combine(Android.OS.Environment.DirectoryPictures));
+
+            if (mediaDir != null && mediaDir.Exists())
+                return mediaDir;
+
+            var file = new File(mediaDir, string.Empty);
+            file.Mkdirs();
+            return file;
+        }
 
         private void CameraCallback()
         {
@@ -119,9 +186,9 @@ namespace GoogleVisionBarCodeScanner.Renderer
 
                 if (lifecycleOwner == null)
                     throw new Exception("Unable to find lifecycle owner");
-                
+
                 // Bind use cases to camera
-                _camera = cameraProvider.BindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalyzer);
+                _camera = cameraProvider.BindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalyzer, _imageCapture);
 
                 HandleCustomPreviewSize(preview);
                 HandleTorch();
@@ -134,16 +201,16 @@ namespace GoogleVisionBarCodeScanner.Renderer
 
         private CameraSelector SelectCamera(ProcessCameraProvider cameraProvider)
         {
-	        if (Element.CameraFacing == CameraFacing.Front)
-	        {
-		        if (cameraProvider.HasCamera(CameraSelector.DefaultFrontCamera))
-			        return CameraSelector.DefaultFrontCamera;
+            if (Element.CameraFacing == CameraFacing.Front)
+            {
+                if (cameraProvider.HasCamera(CameraSelector.DefaultFrontCamera))
+                    return CameraSelector.DefaultFrontCamera;
 
                 throw new NotSupportedException("Front camera is not supported in this device");
             }
 
-	        if (cameraProvider.HasCamera(CameraSelector.DefaultBackCamera))
-		        return CameraSelector.DefaultBackCamera;
+            if (cameraProvider.HasCamera(CameraSelector.DefaultBackCamera))
+                return CameraSelector.DefaultBackCamera;
 
             throw new NotSupportedException("Back camera is not supported in this device");
         }
@@ -239,7 +306,7 @@ namespace GoogleVisionBarCodeScanner.Renderer
         }
 
 
-        private class TorchStateObserver : Java.Lang.Object, IObserver
+        private class TorchStateObserver : Java.Lang.Object, AndroidX.Lifecycle.IObserver
         {
             private readonly CameraViewRenderer _renderer;
 
@@ -280,7 +347,7 @@ namespace GoogleVisionBarCodeScanner.Renderer
                     var mediaImage = proxy.Image;
                     if (mediaImage == null) return;
                     _lastRunTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
-                    
+
                     if (_lastRunTime - _lastAnalysisTime > _renderer.Element.ScanInterval && _renderer.Element.IsScanning)
                     {
                         _lastAnalysisTime = _lastRunTime;
@@ -319,6 +386,30 @@ namespace GoogleVisionBarCodeScanner.Renderer
                 {
                     //Ignore argument exception, it will be thrown if BarcodeAnalyzer get disposed during processing
                 }
+            }
+        }
+
+        class ImageSaveCallback : Java.Lang.Object, IOnImageSavedCallback
+        {
+            private const string TAG = "CameraXBasic";
+
+            private readonly Action<ImageCaptureException> onErrorCallback;
+            private readonly Action<OutputFileResults> onImageSaveCallback;
+
+            public ImageSaveCallback(Action<OutputFileResults> onImageSaveCallback, Action<ImageCaptureException> onErrorCallback)
+            {
+                this.onImageSaveCallback = onImageSaveCallback;
+                this.onErrorCallback = onErrorCallback;
+            }
+
+            public void OnError(ImageCaptureException exc)
+            {
+                this.onErrorCallback.Invoke(exc);
+            }
+
+            public void OnImageSaved(OutputFileResults photoFile)
+            {
+                this.onImageSaveCallback.Invoke(photoFile);
             }
         }
 

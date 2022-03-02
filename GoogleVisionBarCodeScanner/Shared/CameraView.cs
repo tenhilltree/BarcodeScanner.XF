@@ -26,7 +26,7 @@ namespace GoogleVisionBarCodeScanner
             , typeof(CameraView)
             , true
             , defaultBindingMode: BindingMode.TwoWay
-            , propertyChanged: (bindable, value, newValue) => ((CameraView)bindable).VibrationOnDetected= (bool)newValue);
+            , propertyChanged: (bindable, value, newValue) => ((CameraView)bindable).VibrationOnDetected = (bool)newValue);
         public bool VibrationOnDetected
         {
             get => (bool)GetValue(VibrationOnDetectedProperty);
@@ -148,15 +148,26 @@ namespace GoogleVisionBarCodeScanner
             set => SetValue(CaptureQualityProperty, value);
         }
 
+        public static BindableProperty TakePhotoProperty = BindableProperty.Create(nameof(TakePhoto), typeof(bool), typeof(CameraView),
+            false);
+
+        public bool TakePhoto
+        {
+            get => (bool)GetValue(TakePhotoProperty);
+            set => SetValue(TakePhotoProperty, value);
+        }
+
         public event EventHandler<OnDetectedEventArg> OnDetected;
         public void TriggerOnDetected(List<BarcodeResult> barCodeResults)
         {
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 OnDetected?.Invoke(this, new OnDetectedEventArg { BarcodeResults = barCodeResults });
-                OnDetectedCommand?.Execute( new OnDetectedEventArg { BarcodeResults = barCodeResults });
+                OnDetectedCommand?.Execute(new OnDetectedEventArg { BarcodeResults = barCodeResults });
             });
         }
+
+
     }
 
     public class OnDetectedEventArg : EventArgs

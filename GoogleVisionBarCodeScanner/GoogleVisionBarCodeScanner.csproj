@@ -3,7 +3,7 @@
 	<PropertyGroup>
 
 		<!--Update with your target such as: Xamarin.iOS10 or MonoAndroid80 or Xamarin.Mac20-->
-		<TargetFrameworks>Xamarin.iOS10;MonoAndroid10.0;MonoAndroid11.0;netstandard2.0</TargetFrameworks>
+		<TargetFrameworks>MonoAndroid11.0;netstandard2.0;</TargetFrameworks>
 
 		<!--Assembly and Namespace info -->
 		<id>BarcodeScanner.XF</id>
@@ -63,7 +63,7 @@
 
 		<!-- We will compile anything ending in .shared.cs  You can change this -->
 		<Compile Include="Shared\*.cs" />
-        <PackageReference Include="Xamarin.Essentials" Version="1.7.0" />
+        <PackageReference Include="Xamarin.Essentials" Version="1.6.1" />
 		<PackageReference Include="Xamarin.Forms" Version="5.0.0.2125" />
 		
 	</ItemGroup>
